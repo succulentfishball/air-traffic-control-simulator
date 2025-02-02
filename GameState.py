@@ -143,7 +143,7 @@ class Optimizer():
         model.lat = pyo.Var(model.aircraft, model.t, bounds=(-90, 90))
         # we need another state to keep track of the aircraft's speed at current time instant
         # constrain speed to be between 200 knots and 280 knots
-        model.speed = pyo.Var(model.aircraft, model.t, bounds=(200, 280))
+        model.speed = pyo.Var(model.aircraft, model.t, bounds=(0, 280))
         # constrain heading to be between 0 and 360
         model.heading = pyo.Var(model.aircraft, model.t, bounds=(-360, 720))
         # constrain altitude to be between 4000 and 30
@@ -152,6 +152,8 @@ class Optimizer():
         # model.hold_progress = pyo.Var(model.aircraft, model.t, bounds=(0, 2))
         model.goal_lon = pyo.Param(initialize=LHR_COORDS.long)
         model.goal_lat = pyo.Param(initialize=LHR_COORDS.lat)
+        model.z = pyo.Var(model.aircraft, model.aircraft, model.t, within=pyo.Binary)
+        self.m = 9999999
 
         model.acceleration_init = pyo.ConstraintList()
         model.z_speed_init = pyo.ConstraintList()
@@ -267,6 +269,9 @@ class Optimizer():
         
         # model.hold_progress_update = pyo.Constraint(model.aircraft, model.t, rule=hold_progress_update)
 
+    def ifelse(self, model, i, j, t):
+        return (model.min_horizontal_separation / 111139) ** 2  - ((model.lon[i, t] - model.lon[j, t]) ** 2 + (model.lat[i, t] - model.lat[j, t]) ** 2) <= self.m * model.z[i, j, t]
+
     def haversine2(model, i, j, t):
         R = 6371  # Earth's radius in km (use 3440 for nautical miles)
         
@@ -351,18 +356,29 @@ class Optimizer():
 
     def objective_function(self, model):
         cost = 0
-        for t in model.t:
-            for i in model.aircraft:
-                c1 = ((model.lon[i, t] - model.goal_lon) ** 2 + (model.lat[i, t] - model.goal_lat) ** 2) / 50000
-                c2 = abs(model.speed[i, t] - 200) / 80
-                c3 = abs(model.altitude[i, t] - 4000) / 26000
-                cost += (c1 + c2 + c3) * (i + 1)
-                # lon, lat = model.lon[i, t], model.lat[i, t]
-                # # distance to dest in metres
-                # dist = haversine(Coordinate(lon, lat, model.altitude[i, t]), LHR_COORDS) / 50000
-                # delta_speed = abs(model.speed[i, t] - 200) / 80
-                # delta_alt = abs(model.altitude[i, t] - 4000) / 26000
-                # cost += (dist + delta_speed + delta_alt) * i
+        # for t in model.t:
+        #     for i in model.aircraft:
+        #         for j in model.aircraft:
+        #             if i < j:
+        #                 if (model.lon[i, t] - model.lon[j, t]) ** 2 + (model.lat[i, t] - model.lat[j, t]) ** 2:
+        #                     cost += 999999
+        #         c1 = ((model.lon[i, t] - model.goal_lon) ** 2 + (model.lat[i, t] - model.goal_lat) ** 2) / 50000
+        #         # c2 = 0.2 * abs(model.speed[i, t] - 50) / 80
+        #         # c3 = abs(model.altitude[i, t] - 4000) / 26000
+        #         cost += (c1)
+        #         # lon, lat = model.lon[i, t], model.lat[i, t]
+        #         # # distance to dest in metres
+        #         # dist = haversine(Coordinate(lon, lat, model.altitude[i, t]), LHR_COORDS) / 50000
+        #         # delta_speed = abs(model.speed[i, t] - 200) / 80
+        #         # delta_alt = abs(model.altitude[i, t] - 4000) / 26000
+        #         # cost += (dist + delta_speed + delta_alt) * i
+        return sum(
+            model.z[i, j, t] * 999999 if i < j else 0
+            for t in model.t for i in model.aircraft for j in model.aircraft) +\
+            sum(
+                (model.lon[i, t] - model.goal_lon) ** 2 + (model.lat[i, t] - model.goal_lat) ** 2 * ((i + 1) ** 2)
+                for t in model.t for i in model.aircraft
+            )
         return cost
       
         
@@ -396,32 +412,56 @@ class Optimizer():
         self.model.altitude_updates = pyo.Constraint(self.model.aircraft, self.model.t, rule=self.altitude_update)
         # self.model.separation_rules = pyo.Constraint(self.model.aircraft, self.model.aircraft, self.model.t, rule=self.separation_rules)
         # self.model.hold_control_rule = pyo.Constraint(self.model.aircraft, self.model.t, rule=self.hold_control_rule)
+        self.model.ifelse = pyo.Constraint(self.model.aircraft, self.model.aircraft, self.model.t, rule=self.ifelse)
         self.model.acc_rules = pyo.Constraint(self.model.aircraft, self.model.t, rule=self.acc_rules)
         self.model.ang_vel_rules = pyo.Constraint(self.model.aircraft, self.model.t, rule=self.ang_vel_rules)
         self.model.z_speed_rules = pyo.Constraint(self.model.aircraft, self.model.t, rule=self.z_speed_rules)
         self.model.obj = pyo.Objective(rule=self.objective_function, sense=pyo.minimize)
 
         # Running the pyomo solver
-        results = pyo.SolverFactory('glpk').solve(self.model)
+        results = pyo.SolverFactory('ipopt').solve(self.model)
         results.write()
         
         print(self.model.lon)
         print(self.model.lat)
 
+        lons = [self.model.lon[1, t]() for t in self.model.t]
+        lats = [self.model.lat[1, t]() for t in self.model.t]
+        lons2 = [self.model.lon[0, t]() for t in self.model.t]
+        lats2 = [self.model.lat[0, t]() for t in self.model.t]
+        headings = [self.model.heading[1, t]() for t in self.model.t]
+        print(lons)
+        print(lats)
+        print(lons2)
+        print(lats2)
+        print([self.model.z[0, 0, t]() for t in self.model.t])
+        # import shapely
+        # import geopandas as gpd
+        # gdf = {"fuck": [shapely.geometry.Point([lons[i], lats[i]]) for i in range(len(lons))]}
+        # print(gdf)
+        # gdf = gpd.GeoDataFrame(gdf, geometry="fuck", crs="EPSG:4326")
+        # print(gdf)
+        # import os
+        # gdf.to_file(os.path.join(os.getcwd(), "test.json"), driver='GeoJSON')
+
         return self.model
     
 
 a1 = Airplane(1,
-              Coordinate(51.7110011, -0.1523287, 15000),
-              Velocity(220, 280))
+              Coordinate(-0.1523287, 51.7110011, 15000),
+              Velocity(220, 260))
+# a2 = Airplane(2,
+#               Coordinate(-0.0956895, 51.3769529, 16000),
+#               Velocity(120, 260),
+#               )
 a2 = Airplane(2,
-              Coordinate(51.3769529, -0.0956895, 16000),
-              Velocity(120, 280),
+              Coordinate(-0.114430, 51.664308, 16000),
+              Velocity(120, 260),
               )
 airplanes = [a1, a2]
 
 opt = Optimizer(
-    prediction_horizon=30,
+    prediction_horizon=60,
     aircrafts=airplanes,
     dt=10
 )
