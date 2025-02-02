@@ -1,5 +1,4 @@
-import math
-from GameState import Coordinate, Airplane, enttr
+from utils import Coordinate, haversine
 from PlaneToPlaneIdDict import PlaneToPlaneIdDict
 
 # put Optional[ConflictZone] as a variable inside of Airplane class later
@@ -11,7 +10,7 @@ class ConflictZone :
         self.zone_id = ConflictZone.next_id
         ConflictZone.next_id += 1
         self.coordinatesOfCentre = (PlaneToPlaneIdDict[airplane1Id].coordinates + PlaneToPlaneIdDict[airplane2Id].coordinates) / 2
-        self.radius = 10, # default radius
+        self.radius = 30000, # default radius
         self.airplane1Id= airplane1Id
         self.airplane2Id = airplane2Id
     
@@ -29,7 +28,7 @@ class ConflictZone :
     def coordinatesOfCentre(self):
         return self.coordinatesOfCentre
     
-    @coordinates.setter
+    @coordinatesOfCentre.setter
     def coordinatesOfCentre(self, coordinatesOfCentre: Coordinate):
         self.coordinatesOfCentre = coordinatesOfCentre
 
@@ -55,6 +54,12 @@ class ConflictZone :
     def airplane2Id(self, airplane2Id: Airplane):
         self.airplane2Id = airplane2Id
         
+    def in_conflict_zone(self, coord: Coordinate):
+        return haversine(coord, self.coordinatesOfCentre) <= self.radius
+    
+    # override equality
+    def __eq__(self, other):
+        return self.airplane1Id == other.airplane1Id and self.airplane2Id == other.airplane2Id
 
 
 
