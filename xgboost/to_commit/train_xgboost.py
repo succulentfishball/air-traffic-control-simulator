@@ -93,14 +93,14 @@ def train_predict_cmds(train_df: pd.DataFrame, val_df: pd.DataFrame):
     return df
     
 
-def main():
+def main(val_paths: list[str]):
 
     train_paths = [r"..\..\data\train\xgboost_v1\Voice_21-11-2022_train.xlsx",
                    r"..\..\data\train\xgboost_v1\Voice_22-11-2022_train.xlsx",
                    r"..\..\data\train\xgboost_v1\Voice_23-11-2022_train.xlsx",
                    r"..\..\data\train\xgboost_v1\Voice_24-11-2022_train.xlsx",
                    r"..\..\data\train\xgboost_v1\Voice_25-11-2022_train.xlsx"]
-    val_paths = [r"..\..\data\train\xgboost_v1\Voice_26-11-2022_train.xlsx"]
+    # val_paths = [r"..\..\data\train\xgboost_v1\Voice_26-11-2022_train.xlsx"]
     out_path = r"..\..\data\train\xgboost_v1\Test_2025-02-02.xlsx"
 
     train_df = None
@@ -122,6 +122,7 @@ def main():
     # train_predict_has_cmd(train_df, val_df)
     out_df = train_predict_cmds(train_df, val_df)
     out_df.to_excel(out_path, index=False)
+    return out_df
 
 
 if __name__ == "__main__":
